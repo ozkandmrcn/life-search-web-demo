@@ -324,12 +324,9 @@ function rankPhoto(photo, query) {
   }
 
   if (query.color) {
-    if (photo.colors.includes(query.color)) {
-      score += 25;
-      reasons.push("renk");
-    } else if (!query.tags.length && !query.terms.length && !query.year) {
-      return null;
-    }
+    if (!photo.colors.includes(query.color)) return null;
+    score += 25;
+    reasons.push("renk");
   }
 
   if (query.year) {
@@ -340,7 +337,7 @@ function rankPhoto(photo, query) {
 
   const termHits = query.terms.filter(term => searchable.includes(norm(term)));
   if (query.terms.length) {
-    if (!termHits.length && !query.tags.length) return null;
+    if (termHits.length < query.terms.length) return null;
     score += 35 * termHits.length / query.terms.length;
     if (termHits.length) reasons.push("yazı");
   }
