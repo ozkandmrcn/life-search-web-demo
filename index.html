@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#5b4bdb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Life Search">
+<title>Life Search</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#171625;background:#f4f2fb}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#ece8ff 0,#f7f6fb 38%)}
+main{max-width:720px;margin:auto;padding:calc(env(safe-area-inset-top) + 24px) 18px calc(env(safe-area-inset-bottom) + 40px)}
+header{display:flex;align-items:center;gap:13px;margin-bottom:22px}.logo{width:48px;height:48px;border-radius:15px;background:#5b4bdb;color:white;display:grid;place-items:center;font-size:25px;box-shadow:0 10px 25px #5b4bdb44}
+h1{font-size:27px;margin:0}header p{margin:3px 0 0;color:#68667a}.card{background:#fff;border:1px solid #e8e4f4;border-radius:24px;padding:18px;box-shadow:0 12px 35px #4a416510}
+.privacy{display:flex;gap:10px;color:#4d4960;font-size:14px;margin-bottom:15px}.privacy b{color:#2f8d64}.pick{display:block;text-align:center;background:#5b4bdb;color:#fff;border-radius:15px;padding:15px;font-weight:700;cursor:pointer}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}.status{font-size:14px;color:#69647a;margin:14px 2px 0}.progress{height:7px;background:#ece9f5;border-radius:9px;overflow:hidden;margin-top:8px}.progress i{display:block;height:100%;width:0;background:#5b4bdb;transition:.25s}
+.search{position:sticky;top:calc(env(safe-area-inset-top) + 8px);z-index:3;margin:18px 0;background:#fff;border:1px solid #ded9ec;border-radius:18px;display:flex;align-items:center;padding:0 14px;box-shadow:0 10px 30px #41376415}
+.search span{font-size:20px}.search input{border:0;outline:0;background:transparent;width:100%;padding:15px 10px;font-size:16px}.hint{font-size:13px;color:#777287;margin:-8px 5px 16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.photo{position:relative;aspect-ratio:.8;border-radius:20px;overflow:hidden;background:#ddd}.photo img{width:100%;height:100%;object-fit:cover}
+.photo:after{content:"";position:absolute;inset:42% 0 0;background:linear-gradient(transparent,#000d)}.meta{position:absolute;z-index:1;left:11px;right:11px;bottom:11px;color:white}.meta b{display:block;font-size:13px}.meta small{color:#ddd}
+.empty{text-align:center;color:#777287;padding:40px 20px;grid-column:1/-1}.install{margin-top:20px;background:#eeebff;color:#4d3fc4;border-radius:16px;padding:13px;font-size:13px;text-align:center}
+@media(min-width:600px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="logo">⌕</div><div><h1>Life Search</h1><p>Hatırladığın gibi ara.</p></div></header>
+<section class="card">
+<div class="privacy"><b>✓ Cihazında işler</b><span>Fotoğraflar yüklenmez veya kaydedilmez.</span></div>
+<label class="pick" for="photos">Fotoğrafları seç ve analiz et</label>
+<input id="photos" type="file" accept="image/*" multiple>
+<div class="status" id="status">Başlamak için galerinden birkaç fotoğraf seç.</div>
+<div class="progress"><i id="bar"></i></div>
+</section>
+<label class="search"><span>⌕</span><input id="query" placeholder="İki yıl önceki kırmızı araba" autocomplete="off"></label>
+<div class="hint">Renk, nesne, dosya adı veya tarih yazarak ara.</div>
+<section id="results" class="grid"><div class="empty">Henüz analiz edilmiş fotoğraf yok.</div></section>
+<div class="install">iPhone'a eklemek için Safari'de Paylaş → Ana Ekrana Ekle seç.</div>
+</main>
+<script>
+const $=s=>document.querySelector(s),photos=[];
+const tr={araba:"car",otomobil:"car",arac:"vehicle",kedi:"cat",kopek:"dog",cicek:"flower",bisiklet:"bicycle",deniz:"sea",sahil:"beach",yemek:"food",ayakkabi:"shoe",kus:"bird",insan:"person"};
+const colors={kirmizi:"red",mavi:"blue",yesil:"green",sari:"yellow",turuncu:"orange",mor:"purple",pembe:"pink",siyah:"black",beyaz:"white",gri:"gray",kahverengi:"brown"};
+let model;
+function norm(s){return String(s||"").toLocaleLowerCase("tr-TR").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ı/g,"i").replace(/[^a-z0-9]+/g," ").trim()}
+function dominant(img){const c=document.createElement("canvas"),x=c.getContext("2d",{willReadFrequently:true});c.width=c.height=48;x.drawImage(img,0,0,48,48);const d=x.getImageData(0,0,48,48).data;let r=0,g=0,b=0,n=0;for(let i=0;i<d.length;i+=16){if(d[i+3]<100)continue;r+=d[i];g+=d[i+1];b+=d[i+2];n++}r/=n;g/=n;b/=n;const max=Math.max(r,g,b),min=Math.min(r,g,b);if(max<55)return"black";if(min>205)return"white";if(max-min<30)return"gray";if(r>g*1.35&&r>b*1.25)return"red";if(b>r*1.25&&b>g*1.15)return"blue";if(g>r*1.2&&g>b*1.12)return"green";if(r>170&&g>135&&b<110)return"yellow";if(r>165&&b>125&&g<145)return"pink";if(r>120&&b>110&&g<115)return"purple";if(r>130&&g>65&&g<145&&b<90)return"orange";return max===r?"brown":max===g?"green":"blue"}
+function loadImage(url){return new Promise((ok,no)=>{const i=new Image;i.onload=()=>ok(i);i.onerror=no;i.src=url})}
+async function analyze(file,index,total){const url=URL.createObjectURL(file),img=await loadImage(url);let labels=[];try{labels=(await model.classify(img,4)).map(x=>x.className)}catch(e){}let taken=new Date(file.lastModified);try{const ex=await exifr.parse(file,["DateTimeOriginal"]);if(ex&&ex.DateTimeOriginal)taken=new Date(ex.DateTimeOriginal)}catch(e){}photos.push({url:url,name:file.name,color:dominant(img),labels:labels,taken:taken});$("#status").textContent=(index+1)+"/"+total+" fotoğraf analiz edildi";$("#bar").style.width=((index+1)/total*100)+"%"}
+$("#photos").addEventListener("change",async e=>{const files=[...e.target.files].slice(0,30);if(!files.length)return;$("#status").textContent="Yapay zekâ modeli hazırlanıyor…";$("#bar").style.width="3%";try{model=model||await mobilenet.load()}catch(err){$("#status").textContent="Nesne modeli yüklenemedi; renk ve tarih analizi devam ediyor."}for(let i=0;i<files.length;i++)await analyze(files[i],i,files.length);render()});
+function queryInfo(raw){let s=norm(raw).replace(/\biki\b/g,"2").replace(/\bbir\b/g,"1").replace(/\buc\b/g,"3");const tok=s.split(" ").filter(Boolean),color=Object.keys(colors).find(k=>tok.includes(norm(k)));let year=null,m=s.match(/(\d+) yil once/);if(m)year=(new Date).getFullYear()-Number(m[1]);else{m=s.match(/\b(20\d{2})\b/);if(m)year=Number(m[1])}const terms=tok.filter(t=>!["yil","once","onceki","fotograf","fotograflar","cekilen","cektigim","bul","goster",color&&norm(color)].includes(t)&&!/^\d+$/.test(t)).map(t=>tr[t]||t);return{color:color&&colors[color],year:year,terms:terms}}
+function render(){const q=queryInfo($("#query").value);let list=photos.map(p=>{const text=norm(p.name+" "+p.labels.join(" "));let score=0,reasons=[];if(q.color&&p.color===q.color){score+=35;reasons.push("renk")}if(q.year&&p.taken.getFullYear()===q.year){score+=25;reasons.push("tarih")}const hits=q.terms.filter(t=>text.includes(norm(t))).length;if(hits){score+=Math.round(40*hits/Math.max(1,q.terms.length));reasons.push("nesne")}return{p:p,score:score,reasons:reasons}});if(q.color||q.year||q.terms.length)list=list.filter(x=>x.score>0).sort((a,b)=>b.score-a.score);const el=$("#results");if(!list.length){el.innerHTML='<div class="empty">'+(photos.length?"Eşleşen fotoğraf bulunamadı.":"Henüz analiz edilmiş fotoğraf yok.")+"</div>";return}el.innerHTML=list.map(x=>'<article class="photo"><img src="'+x.p.url+'" alt=""><div class="meta"><b>'+x.p.taken.toLocaleDateString("tr-TR")+'</b><small>'+(x.score?x.score+"% · "+x.reasons.join(" · "):x.p.labels[0]||x.p.color)+'</small></div></article>').join("")}
+$("#query").addEventListener("input",render);
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
